@@ -255,7 +255,7 @@ class AuthController extends GetxController {
 
       if (!await launchUrl(
         url,
-        mode: LaunchMode.externalApplication,
+        mode: LaunchMode.inAppBrowserView,
       )) {
         throw Exception('Could not launch Spotify authentication');
       }
