@@ -77,12 +77,7 @@ class SpotifyApiService {
 
       if (response.statusCode == 200) {
         return (response.data['items'] as List)
-            .map((item) => Playlist(
-                  id: item['id'],
-                  name: item['name'],
-                  imageUrl: item['images']?[0]?['url'] ?? '',
-                  tracks: [],
-                ))
+            .map((item) => Playlist.fromJson(item))
             .toList();
       }
       throw DioException(
@@ -103,16 +98,7 @@ class SpotifyApiService {
       if (response.statusCode == 200) {
         return (response.data['items'] as List).map((item) {
           final track = item['track'];
-          print('track[artists]: ${track['artists']}');
-          return Track(
-            id: track['id'],
-            name: track['name'],
-            artist: track['artists'][0]['name'] ??
-                track['artists'][0]['type'] ??
-                '',
-            albumArt: track['album']['images'][0]['url'],
-            duration: Duration(milliseconds: track['duration_ms']),
-          );
+          return Track.fromJson(track);
         }).toList();
       }
       throw DioException(
@@ -148,6 +134,28 @@ class Track {
     required this.albumArt,
     required this.duration,
   });
+
+  // Convert a Track instance to a JSON map
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'artist': artist,
+      'albumArt': albumArt,
+      'duration': duration.inMilliseconds,
+    };
+  }
+
+  // Create a Track instance from a JSON map
+  factory Track.fromJson(Map<String, dynamic> json) {
+    return Track(
+      id: json['id'],
+      name: json['name'],
+      artist: json['artists'][0]['name'] ?? json['artists'][0]['type'] ?? '',
+      albumArt: json['album']['images'][0]['url'],
+      duration: Duration(milliseconds: json['duration_ms']),
+    );
+  }
 }
 
 class Playlist {
@@ -162,6 +170,26 @@ class Playlist {
     required this.imageUrl,
     required this.tracks,
   });
+
+  // Convert a Playlist instance to a JSON map
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'imageUrl': imageUrl,
+      'tracks': tracks.map((track) => track.toJson()).toList(),
+    };
+  }
+
+  // Create a Playlist instance from a JSON map
+  factory Playlist.fromJson(Map<String, dynamic> json) {
+    return Playlist(
+      id: json['id'],
+      name: json['name'],
+      imageUrl: json['images']?[0]?['url'] ?? '',
+      tracks: [],
+    );
+  }
 }
 
 // Auth Controller
