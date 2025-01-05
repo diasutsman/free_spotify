@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:free_spotify/app_interceptor.dart';
 import 'package:free_spotify/env.dart';
 import 'package:free_spotify/pkce_helper.dart';
+import 'package:free_spotify/playlist_detail_screen.dart';
 import 'package:get/get.dart' hide FormData;
 import 'package:dio/dio.dart';
 import 'package:flutter_web_auth/flutter_web_auth.dart';
@@ -102,10 +103,13 @@ class SpotifyApiService {
       if (response.statusCode == 200) {
         return (response.data['items'] as List).map((item) {
           final track = item['track'];
+          print('track[artists]: ${track['artists']}');
           return Track(
             id: track['id'],
             name: track['name'],
-            artist: track['artists'][0]['name'],
+            artist: track['artists'][0]['name'] ??
+                track['artists'][0]['type'] ??
+                '',
             albumArt: track['album']['images'][0]['url'],
             duration: Duration(milliseconds: track['duration_ms']),
           );
@@ -116,8 +120,9 @@ class SpotifyApiService {
         response: response,
         error: 'Failed to fetch tracks',
       );
-    } catch (e) {
+    } catch (e, st) {
       print('Error fetching tracks: $e');
+      print('stacktrace: $st');
       return [];
     }
   }
@@ -246,6 +251,7 @@ class PlaylistController extends GetxController {
   final _apiService = SpotifyApiService();
   var playlists = <Playlist>[].obs;
   var isLoading = false.obs;
+  var isPlaylistTracksLoading = false.obs;
   var selectedPlaylist = Rx<Playlist?>(null);
 
   Future<void> fetchPlaylists() async {
@@ -259,7 +265,7 @@ class PlaylistController extends GetxController {
   }
 
   Future<void> loadPlaylistTracks(String playlistId) async {
-    isLoading.value = true;
+    isPlaylistTracksLoading.value = true;
     try {
       final tracks = await _apiService.getPlaylistTracks(playlistId);
       final playlistIndex = playlists.indexWhere((p) => p.id == playlistId);
@@ -273,8 +279,11 @@ class PlaylistController extends GetxController {
         playlists[playlistIndex] = updatedPlaylist;
         selectedPlaylist.value = updatedPlaylist;
       }
+    } catch (e, st) {
+      print('Error loading playlist tracks: $e');
+      print('Stack trace: $st');
     } finally {
-      isLoading.value = false;
+      isPlaylistTracksLoading.value = false;
     }
   }
 }
@@ -378,8 +387,10 @@ class HomeScreen extends StatelessWidget {
                                     )
                                   : _buildPlaceholder(),
                               title: Text(playlist.name),
-                              onTap: () => playlistController
-                                  .loadPlaylistTracks(playlist.id),
+                              onTap: () => Get.to(() => PlaylistDetailScreen(
+                                    playlistId: playlist.id,
+                                    playlistName: playlist.name,
+                                  )),
                             );
                           },
                         ),
