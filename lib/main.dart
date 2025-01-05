@@ -1,8 +1,16 @@
+import 'dart:developer';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:free_spotify/app_interceptor.dart';
+import 'package:free_spotify/env.dart';
+import 'package:free_spotify/pkce_helper.dart';
 import 'package:get/get.dart' hide FormData;
 import 'package:dio/dio.dart';
 import 'package:flutter_web_auth/flutter_web_auth.dart';
 import 'dart:convert';
+
+import 'package:url_launcher/url_launcher.dart';
 
 // API Service
 class SpotifyApiService {
@@ -13,12 +21,18 @@ class SpotifyApiService {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: 'https://api.spotify.com/v1',
     validateStatus: (status) => status! < 500,
-  ));
+  ))
+    ..interceptors.addAll([
+      AppInterceptor(),
+    ]);
 
   final Dio _authDio = Dio(BaseOptions(
     baseUrl: 'https://accounts.spotify.com/api',
     validateStatus: (status) => status! < 500,
-  ));
+  ))
+    ..interceptors.addAll([
+      AppInterceptor(),
+    ]);
 
   void setAccessToken(String token) {
     _dio.options.headers['Authorization'] = 'Bearer $token';
@@ -28,16 +42,16 @@ class SpotifyApiService {
     try {
       final response = await _authDio.post(
         '/token',
-        data: FormData.fromMap({
+        data: {
           'grant_type': 'authorization_code',
           'code': code,
           'redirect_uri': REDIRECT_URI,
-        }),
+        },
         options: Options(
           headers: {
+            'content-type': 'application/x-www-form-urlencoded',
             'Authorization':
                 'Basic ${base64Encode(utf8.encode('$CLIENT_ID:$CLIENT_SECRET'))}',
-            'Content-Type': 'application/x-www-form-urlencoded',
           },
         ),
       );
@@ -110,9 +124,9 @@ class SpotifyApiService {
 }
 
 // Constants
-const String CLIENT_ID = '0bf5c4c6ac034b62bf168cb229fad52f';
-const String CLIENT_SECRET = 'fc207a9919d14b769a0ddaf24bdefb3a';
-const String REDIRECT_URI = 'https://www.google.com';
+String CLIENT_ID = Env.clientId;
+String CLIENT_SECRET = Env.clientSecret;
+const String REDIRECT_URI = 'free-spotify://callback';
 
 // Models
 class Track {
@@ -152,30 +166,68 @@ class AuthController extends GetxController {
   var isLoggedIn = false.obs;
   var isLoading = false.obs;
 
-  Future<void> login() async {
+  @override
+  void onInit() {
+    initUniLinks();
+    super.onInit();
+  }
+
+  Future<void> initUniLinks() async {
+    try {
+      AppLinks().uriLinkStream.listen((Uri uri) async {
+        log('Deep link received: ${uri.toString()}');
+
+        if (uri.toString().contains('code=')) {
+          final code = uri.queryParameters['code'];
+          if (code != null) {
+            await handleAuthCode(code);
+          }
+        }
+      });
+    } catch (e) {
+      print('Error initializing deep links: $e');
+    }
+  }
+
+  Future<void> handleAuthCode(String code) async {
     isLoading.value = true;
     try {
-      final url = 'https://accounts.spotify.com/authorize?'
-          'client_id=$CLIENT_ID&'
-          'response_type=code&'
-          'redirect_uri=$REDIRECT_URI&'
-          'scope=playlist-read-private%20user-library-read';
-
-      final result = await FlutterWebAuth.authenticate(
-          url: url, callbackUrlScheme: 'google');
-
-      final code = Uri.parse(result).queryParameters['code'];
-      final token = await _apiService.getAccessToken(code!);
-
+      final token = await _apiService.getAccessToken(code);
       if (token != null) {
         accessToken.value = token;
         _apiService.setAccessToken(token);
         isLoggedIn.value = true;
         Get.find<PlaylistController>().fetchPlaylists();
       } else {
-        Get.snackbar('Error', 'Failed to login');
+        Get.snackbar('Error', 'Failed to retrieve access token');
       }
     } catch (e) {
+      print('Error handling auth code: $e');
+      Get.snackbar('Error', 'Authentication failed: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> login() async {
+    isLoading.value = true;
+    try {
+      final url = Uri.parse(
+        'https://accounts.spotify.com/authorize'
+        '?client_id=$CLIENT_ID'
+        '&response_type=code'
+        '&redirect_uri=${Uri.encodeComponent(REDIRECT_URI)}'
+        '&scope=playlist-read-private%20user-library-read',
+      );
+
+      if (!await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      )) {
+        throw Exception('Could not launch Spotify authentication');
+      }
+    } catch (e) {
+      print('Login error: $e');
       Get.snackbar('Error', 'Login failed: $e');
     } finally {
       isLoading.value = false;
